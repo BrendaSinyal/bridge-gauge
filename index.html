@@ -104,17 +104,19 @@
     ];
 
     // draw arcs
-    ctx.lineCap = "butt";
-    ctx.lineWidth = thickness;
+   ctx.lineCap = "butt";
+ctx.lineWidth = thickness;
 
-    ranges.forEach(rg => {
-      const a1 = scoreToAngle(rg.from);
-      const a2 = scoreToAngle(rg.to);
-      ctx.beginPath();
-      ctx.strokeStyle = rg.color;
-      // because angle decreases as score increases, swap for correct direction
-      ctx.arc(cx, cy, (rOuter+rInner)/2, a1, a2, true);
-      ctx.stroke();
+ranges.forEach(rg => {
+  const start = scoreToAngle(rg.from);
+  const end   = scoreToAngle(rg.to);
+
+  ctx.beginPath();
+  ctx.strokeStyle = rg.color;
+
+  // IMPORTANT: antiClockwise = false (atau hilangkan param terakhir)
+  ctx.arc(cx, cy, (rOuter + rInner) / 2, start, end, false);
+  ctx.stroke();
     });
 
     // inner cutout (clean)
