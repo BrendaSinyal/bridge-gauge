@@ -1,0 +1,206 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>B/RIDGE Readiness Gauge</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 16px; }
+    .wrap { max-width: 720px; }
+    .row { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+    select { padding: 8px; min-width: 280px; }
+    .card { border: 1px solid #e5e5e5; border-radius: 12px; padding: 14px; }
+    .title { font-weight: 700; margin: 0 0 8px; }
+    .sub { color:#666; margin: 0 0 14px; }
+    .meta { margin-top: 8px; display:flex; gap:14px; flex-wrap:wrap; }
+    .pill { padding:6px 10px; border-radius: 999px; background:#f3f3f3; font-size: 12px; }
+    canvas { width: 100%; height: auto; display:block; }
+  </style>
+</head>
+<body>
+  <div class="wrap card">
+    <p class="title">B/RIDGE™ Workforce Readiness</p>
+    <p class="sub">Select Timestamp → see score + category</p>
+
+    <div class="row">
+      <label><b>Timestamp:</b></label>
+      <select id="tsSelect">
+        <option value="">Loading...</option>
+      </select>
+      <span class="pill" id="scorePill">Score: -</span>
+      <span class="pill" id="labelPill">Label: -</span>
+    </div>
+
+    <div style="margin-top:14px;">
+      <canvas id="gauge" width="700" height="380"></canvas>
+    </div>
+
+    <div class="meta">
+      <span class="pill">High: 80–100</span>
+      <span class="pill">Moderate: 60–79</span>
+      <span class="pill">Low: 40–59</span>
+      <span class="pill">Critical: 0–39</span>
+    </div>
+  </div>
+
+<script>
+  // 1) PASTE your published CSV link here (output=csv)
+  const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSTtdTF28afrK__RsR6-8PVcDWvn-si4vjUPrW6WGg69-qPWsobQYIPA18a4ZBSuzxZnVWMYkCKSMJV/pub?gid=1314981579&single=true&output=csv";
+
+  // --- helpers ---
+  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+
+  function scoreToLabel(score){
+    if (score >= 80) return "High";
+    if (score >= 60) return "Moderate";
+    if (score >= 40) return "Low";
+    return "Critical";
+  }
+
+  // map score (0..100) to angle (left=-180deg to right=0deg)
+  function scoreToAngle(score){
+    const s = clamp(score,0,100);
+    const start = Math.PI;      // 180°
+    const end   = 0;            // 0°
+    return start + (end - start) * (s / 100);
+  }
+
+  async function fetchCSV(url){
+    const res = await fetch(url, { cache: "no-store" });
+    const text = await res.text();
+
+    // basic CSV parse (works if your values have no commas inside)
+    const lines = text.trim().split(/\r?\n/).filter(Boolean);
+    const rows = lines.map(l => l.split(",").map(x => x.replace(/^"|"$/g,"").trim()));
+    return rows; // [ [Timestamp, Total, Label], ... ]
+  }
+
+  function drawGauge(score){
+    const canvas = document.getElementById("gauge");
+    const ctx = canvas.getContext("2d");
+
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0,0,W,H);
+
+    // geometry
+    const cx = W/2;
+    const cy = H*0.95;     // center near bottom
+    const rOuter = Math.min(W*0.42, H*0.9);
+    const thickness = rOuter*0.18;
+    const rInner = rOuter - thickness;
+
+    // ranges (Critical/Low/Moderate/High)
+    const ranges = [
+      { from: 0,  to: 39,  color: "#e74c3c" }, // red
+      { from: 40, to: 59,  color: "#f39c12" }, // orange
+      { from: 60, to: 79,  color: "#f1c40f" }, // yellow
+      { from: 80, to: 100, color: "#2ecc71" }, // green
+    ];
+
+    // draw arcs
+    ctx.lineCap = "butt";
+    ctx.lineWidth = thickness;
+
+    ranges.forEach(rg => {
+      const a1 = scoreToAngle(rg.from);
+      const a2 = scoreToAngle(rg.to);
+      ctx.beginPath();
+      ctx.strokeStyle = rg.color;
+      // because angle decreases as score increases, swap for correct direction
+      ctx.arc(cx, cy, (rOuter+rInner)/2, a1, a2, true);
+      ctx.stroke();
+    });
+
+    // inner cutout (clean)
+    ctx.beginPath();
+    ctx.fillStyle = "#fff";
+    ctx.arc(cx, cy, rInner - 2, Math.PI, 0, true);
+    ctx.lineTo(cx, cy);
+    ctx.closePath();
+    ctx.fill();
+
+    // needle
+    const ang = scoreToAngle(score);
+    const needleLen = rInner*0.92;
+    const nx = cx + Math.cos(ang) * needleLen;
+    const ny = cy + Math.sin(ang) * needleLen;
+
+    // needle body
+    ctx.beginPath();
+    ctx.strokeStyle = "#2c3e50";
+    ctx.lineWidth = 6;
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(nx, ny);
+    ctx.stroke();
+
+    // hub
+    ctx.beginPath();
+    ctx.fillStyle = "#2c3e50";
+    ctx.arc(cx, cy, 10, 0, Math.PI*2);
+    ctx.fill();
+
+    // labels
+    const label = scoreToLabel(score);
+    ctx.fillStyle = "#111";
+    ctx.font = "bold 42px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(`${Math.round(score)}%`, cx, H*0.52);
+
+    ctx.fillStyle = "#555";
+    ctx.font = "bold 18px Arial";
+    ctx.fillText(`${label} Readiness`, cx, H*0.60);
+  }
+
+  async function init(){
+    if (CSV_URL.includes("PASTE_YOUR_CSV_LINK_HERE")){
+      alert("Please paste your CSV link into CSV_URL in index.html");
+      return;
+    }
+
+    const data = await fetchCSV(CSV_URL);
+
+    // expect header row: Timestamp, Total, Label
+    const header = data[0];
+    const rows = data.slice(1)
+      .filter(r => r.length >= 2 && r[0] && r[1] !== "")
+      .map(r => ({
+        ts: r[0],
+        total: Number(r[1]),
+        label: (r[2] || "").trim()
+      }))
+      .filter(x => !Number.isNaN(x.total));
+
+    // sort newest first (string timestamps might not sort perfectly, but OK if consistent)
+    rows.reverse();
+
+    const sel = document.getElementById("tsSelect");
+    sel.innerHTML = "";
+    rows.forEach((r, idx) => {
+      const opt = document.createElement("option");
+      opt.value = idx;
+      opt.textContent = r.ts;
+      sel.appendChild(opt);
+    });
+
+    function update(){
+      const idx = Number(sel.value);
+      const item = rows[idx] || rows[0];
+      const score = clamp(item.total,0,100);
+      const label = item.label || scoreToLabel(score);
+
+      document.getElementById("scorePill").textContent = `Score: ${score.toFixed(1)}`;
+      document.getElementById("labelPill").textContent = `Label: ${label}`;
+      drawGauge(score);
+    }
+
+    sel.addEventListener("change", update);
+
+    // default show first row
+    sel.value = "0";
+    update();
+  }
+
+  init();
+</script>
+</body>
+</html>
