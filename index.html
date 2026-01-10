@@ -158,10 +158,10 @@
   }
 
   async function init(){
-    if (CSV_URL.includes("https://docs.google.com/spreadsheets/d/e/2PACX-1vSTtdTF28afrK__RsR6-8PVcDWvn-si4vjUPrW6WGg69-qPWsobQYIPA18a4ZBSuzxZnVWMYkCKSMJV/pub?gid=1314981579&single=true&output=csv")){
-      alert("Please paste your CSV link into CSV_URL in index.html");
-      return;
-    }
+   if (!CSV_URL || !CSV_URL.includes("output=csv")) {
+  alert("Please paste your published CSV link (…output=csv) into CSV_URL.");
+  return;
+}
 
     const data = await fetchCSV(CSV_URL);
 
