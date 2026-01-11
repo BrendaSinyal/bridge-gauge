@@ -5,55 +5,47 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>B/RIDGE Readiness Gauge</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 16px; }
-    .wrap { max-width: 720px; }
-    .row { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
-    select { padding: 8px; min-width: 280px; }
-    .card { border: 1px solid #e5e5e5; border-radius: 12px; padding: 14px; }
-    .title { font-weight: 700; margin: 0 0 8px; }
+    body { font-family: Arial, sans-serif; margin: 16px; background:#fff; }
+    .wrap { max-width: 920px; margin: 0 auto; }
+    .card { border: 1px solid #e5e5e5; border-radius: 14px; padding: 18px; }
+    .title { font-weight: 800; margin: 0 0 6px; font-size: 22px; }
     .sub { color:#666; margin: 0 0 14px; }
-    .meta { margin-top: 8px; display:flex; gap:14px; flex-wrap:wrap; }
-    .pill { padding:6px 10px; border-radius: 999px; background:#f3f3f3; font-size: 12px; }
-    canvas { width: 100%; height: auto; display:block; }
- /* biar canvas gauge nggak “aneh/kejepit” saat di-resize */
-    #gauge { width: 100%; height: 320px; display: block; }
-
-    /* opsional: biar layout rapi */
-    .card { max-width: 900px; margin: 0 auto; padding: 16px; }
-    
+    .row { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+    select { padding: 9px 10px; min-width: 320px; border:1px solid #111; border-radius:4px; }
+    .pill { padding:7px 12px; border-radius: 999px; background:#f3f3f3; font-size: 13px; }
+    .legend { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
+    .lg { display:flex; gap:8px; align-items:center; padding:8px 12px; border-radius:999px; background:#f6f6f6; font-size:13px; }
+    .dot { width:10px; height:10px; border-radius:999px; display:inline-block; }
+    #gauge { width: 100%; height: 420px; display:block; }
   </style>
 </head>
 <body>
   <div class="wrap card">
-    <p class="title">B/RIDGE™ Workforce Readiness</p>
-    <p class="sub">Select Timestamp → see score + category</p>
+    <div class="title">B/RIDGE™ Workforce Readiness</div>
+    <div class="sub">Select Timestamp → see score + category</div>
 
     <div class="row">
-      <label><b>Timestamp:</b></label>
-      <select id="tsSelect">
-        <option value="">Loading...</option>
-      </select>
+      <b>Timestamp:</b>
+      <select id="tsSelect"><option value="">Loading...</option></select>
       <span class="pill" id="scorePill">Score: -</span>
       <span class="pill" id="labelPill">Label: -</span>
     </div>
 
-    <div style="margin-top:14px;">
-      <canvas id="gauge" width="700" height="380"></canvas>
-    </div>
+    <canvas id="gauge"></canvas>
 
-    <div class="meta">
-      <span class="pill">High: 80–100</span>
-      <span class="pill">Moderate: 60–79</span>
-      <span class="pill">Low: 40–59</span>
-      <span class="pill">Critical: 0–39</span>
+    <div class="legend">
+      <div class="lg"><span class="dot" style="background:#2ecc71"></span>High: 80–100</div>
+      <div class="lg"><span class="dot" style="background:#f1c40f"></span>Moderate: 60–79</div>
+      <div class="lg"><span class="dot" style="background:#f39c12"></span>Low: 40–59</div>
+      <div class="lg"><span class="dot" style="background:#e74c3c"></span>Critical: 0–39</div>
     </div>
   </div>
 
 <script>
-  // 1) PASTE your published CSV link here (output=csv)
-  const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSTtdTF28afrK__RsR6-8PVcDWvn-si4vjUPrW6WGg69-qPWsobQYIPA18a4ZBSuzxZnVWMYkCKSMJV/pub?gid=1314981579&single=true&output=csv";
+  // Paste your published CSV (must be output=csv).
+  // Expected columns: Timestamp, Total, Label(optional)
+  const CSV_URL = "PASTE_YOUR_CSV_URL_HERE";
 
-  // --- helpers ---
   function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
   function scoreToLabel(score){
@@ -63,113 +55,167 @@
     return "Critical";
   }
 
-  // map score (0..100) to angle (left=-180deg to right=0deg)
+  // IMPORTANT: We want High on LEFT and Critical on RIGHT.
+  // Canvas angle: 0 rad = right, PI rad = left (top semicircle).
+  // So: score 0 -> angle 0 (right), score 100 -> angle PI (left).
   function scoreToAngle(score){
     const s = clamp(score,0,100);
-    const start = Math.PI;      // 180°
-    const end   = 0;            // 0°
-    return start + (end - start) * (s / 100);
+    return (Math.PI * (s / 100));
   }
 
   async function fetchCSV(url){
     const res = await fetch(url, { cache: "no-store" });
     const text = await res.text();
-
-    // basic CSV parse (works if your values have no commas inside)
     const lines = text.trim().split(/\r?\n/).filter(Boolean);
-    const rows = lines.map(l => l.split(",").map(x => x.replace(/^"|"$/g,"").trim()));
-    return rows; // [ [Timestamp, Total, Label], ... ]
+    return lines.map(l => l.split(",").map(x => x.replace(/^"|"$/g,"").trim()));
+  }
+
+  function roundedRect(ctx, x, y, w, h, r){
+    ctx.beginPath();
+    ctx.moveTo(x+r, y);
+    ctx.arcTo(x+w, y, x+w, y+h, r);
+    ctx.arcTo(x+w, y+h, x, y+h, r);
+    ctx.arcTo(x, y+h, x, y, r);
+    ctx.arcTo(x, y, x+w, y, r);
+    ctx.closePath();
+  }
+
+  function labelColor(label){
+    if (label === "High") return "#2ecc71";
+    if (label === "Moderate") return "#f1c40f";
+    if (label === "Low") return "#f39c12";
+    return "#e74c3c";
+  }
+
+  function resizeCanvas(canvas){
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = canvas.clientWidth;
+    const cssH = canvas.clientHeight;
+    canvas.width  = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr,0,0,dpr,0,0);
   }
 
   function drawGauge(score){
     const canvas = document.getElementById("gauge");
+    resizeCanvas(canvas);
     const ctx = canvas.getContext("2d");
 
-    const W = canvas.width, H = canvas.height;
+    const W = canvas.clientWidth;
+    const H = canvas.clientHeight;
     ctx.clearRect(0,0,W,H);
 
-    // geometry
+    // geometry tuned to look like the reference
     const cx = W/2;
-    const cy = H*0.95;     // center near bottom
-    const rOuter = Math.min(W*0.42, H*0.9);
-    const thickness = rOuter*0.18;
-    const rInner = rOuter - thickness;
+    const cy = H*0.88;                 // pivot near bottom
+    const rOuter = Math.min(W*0.43, H*0.80);
+    const thickness = Math.max(26, rOuter*0.18);
+    const rMid = rOuter - thickness/2;
+    const rInner = rOuter - thickness - 10;
 
-    // ranges (Critical/Low/Moderate/High)
-    const ranges = [
-      { from: 0,  to: 39,  color: "#e74c3c" }, // red
-      { from: 40, to: 59,  color: "#f39c12" }, // orange
-      { from: 60, to: 79,  color: "#f1c40f" }, // yellow
-      { from: 80, to: 100, color: "#2ecc71" }, // green
+    // background arc (light grey)
+    ctx.lineCap = "butt";
+    ctx.lineWidth = thickness;
+    ctx.strokeStyle = "#e9ecef";
+    ctx.beginPath();
+    // draw top semicircle from LEFT (PI) to RIGHT (0) clockwise
+    ctx.arc(cx, cy, rMid, Math.PI, 0, false);
+    ctx.stroke();
+
+    // colored segments (score ascending = right->left)
+    const segments = [
+      { from: 0,  to: 39,  color: "#e74c3c" }, // critical (right end)
+      { from: 40, to: 59,  color: "#f39c12" }, // low
+      { from: 60, to: 79,  color: "#f1c40f" }, // moderate
+      { from: 80, to: 100, color: "#2ecc71" }, // high (left end)
     ];
 
-  // draw arcs (FIXED)
-ctx.lineCap = "butt";
-ctx.lineWidth = thickness;
-
-ranges.forEach(rg => {
-  const start = scoreToAngle(rg.from);
-  const end   = scoreToAngle(rg.to);
-
-  ctx.beginPath();
-  ctx.strokeStyle = rg.color;
-
-  // IMPORTANT: antiClockwise = false (atau hilangkan param terakhir)
-  ctx.arc(cx, cy, (rOuter + rInner) / 2, start, end, false);
-  ctx.stroke();
+    segments.forEach(seg => {
+      const a1 = scoreToAngle(seg.from);
+      const a2 = scoreToAngle(seg.to);
+      ctx.strokeStyle = seg.color;
+      ctx.beginPath();
+      // from right to left along top => counterclockwise (true) since a2>a1
+      ctx.arc(cx, cy, rMid, a1, a2, true);
+      ctx.stroke();
     });
 
-    // inner cutout (clean)
-    ctx.beginPath();
+    // inner white face (clean like template)
     ctx.fillStyle = "#fff";
-    ctx.arc(cx, cy, rInner - 2, Math.PI, 0, true);
+    ctx.beginPath();
+    ctx.arc(cx, cy, rInner, Math.PI, 0, false);
     ctx.lineTo(cx, cy);
     ctx.closePath();
     ctx.fill();
 
-    // needle
-    const ang = scoreToAngle(score);
-    const needleLen = rInner*0.92;
-    const nx = cx + Math.cos(ang) * needleLen;
-    const ny = cy + Math.sin(ang) * needleLen;
-
-    // needle body
+    // subtle outline
+    ctx.strokeStyle = "#cfd4da";
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.strokeStyle = "#2c3e50";
-    ctx.lineWidth = 6;
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(nx, ny);
+    ctx.arc(cx, cy, rOuter+1, Math.PI, 0, false);
     ctx.stroke();
 
-    // hub
-    ctx.beginPath();
+    // needle
+    const ang = scoreToAngle(score);
+    const needleLen = rInner * 0.98;
+    const tipX = cx + Math.cos(ang) * needleLen;
+    const tipY = cy - Math.sin(ang) * needleLen; // IMPORTANT: canvas Y down; for top semicircle use -sin
+
+    // base points for needle width
+    const baseLen = 16;
+    const perp = ang + Math.PI/2;
+    const leftX  = cx + Math.cos(perp) * 6;
+    const leftY  = cy - Math.sin(perp) * 6;
+    const rightX = cx - Math.cos(perp) * 6;
+    const rightY = cy + Math.sin(perp) * 6;
+
+    const backX = cx - Math.cos(ang) * baseLen;
+    const backY = cy + Math.sin(ang) * baseLen;
+
     ctx.fillStyle = "#2c3e50";
-    ctx.arc(cx, cy, 10, 0, Math.PI*2);
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(leftX, leftY);
+    ctx.lineTo(backX, backY);
+    ctx.lineTo(rightX, rightY);
+    ctx.closePath();
     ctx.fill();
 
-    // labels
-    const label = scoreToLabel(score);
-    ctx.fillStyle = "#111";
-    ctx.font = "bold 42px Arial";
+    // hub
+    ctx.fillStyle = "#2c3e50";
+    ctx.beginPath();
+    ctx.arc(cx, cy, 12, 0, Math.PI*2);
+    ctx.fill();
+
+    // center text (big %)
     ctx.textAlign = "center";
+    ctx.fillStyle = "#111";
+    ctx.font = "800 64px Arial";
     ctx.fillText(`${Math.round(score)}%`, cx, H*0.52);
 
-    ctx.fillStyle = "#555";
-    ctx.font = "bold 18px Arial";
-    ctx.fillText(`${label} Readiness`, cx, H*0.60);
+    // label pill (Moderate/Low/etc) like your reference
+    const label = scoreToLabel(score);
+    const pillW = 240, pillH = 44;
+    const pillX = cx - pillW/2;
+    const pillY = H*0.56;
+    ctx.fillStyle = labelColor(label);
+    roundedRect(ctx, pillX, pillY, pillW, pillH, 22);
+    ctx.fill();
+
+    ctx.fillStyle = "#111";
+    ctx.font = "700 20px Arial";
+    ctx.fillText(`${label} Readiness`, cx, pillY + 30);
   }
 
   async function init(){
-   if (!CSV_URL || !CSV_URL.includes("output=csv")) {
-  alert("Please paste your published CSV link (…output=csv) into CSV_URL.");
-  return;
-}
+    if (!CSV_URL || CSV_URL.includes("PASTE_YOUR_CSV_URL_HERE")) {
+      alert("Paste your Google Sheets published CSV link into CSV_URL in index.html");
+      return;
+    }
 
-    const data = await fetchCSV(CSV_URL);
-
-    // expect header row: Timestamp, Total, Label
-    const header = data[0];
-    const rows = data.slice(1)
+    const raw = await fetchCSV(CSV_URL);
+    const rows = raw.slice(1)
       .filter(r => r.length >= 2 && r[0] && r[1] !== "")
       .map(r => ({
         ts: r[0],
@@ -177,9 +223,6 @@ ranges.forEach(rg => {
         label: (r[2] || "").trim()
       }))
       .filter(x => !Number.isNaN(x.total));
-
-    // sort newest first (string timestamps might not sort perfectly, but OK if consistent)
-    rows.reverse();
 
     const sel = document.getElementById("tsSelect");
     sel.innerHTML = "";
@@ -191,7 +234,7 @@ ranges.forEach(rg => {
     });
 
     function update(){
-      const idx = Number(sel.value);
+      const idx = Number(sel.value || 0);
       const item = rows[idx] || rows[0];
       const score = clamp(item.total,0,100);
       const label = item.label || scoreToLabel(score);
@@ -202,8 +245,8 @@ ranges.forEach(rg => {
     }
 
     sel.addEventListener("change", update);
+    window.addEventListener("resize", update);
 
-    // default show first row
     sel.value = "0";
     update();
   }
