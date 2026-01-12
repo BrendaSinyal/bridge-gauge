@@ -27,11 +27,12 @@
     <div class="row">
       <span class="pill" id="scorePill">Score: -</span>
       <span class="pill" id="labelPill">Label: -</span>
-      <span class="pill" id="emailPill" style="display:none;"></span>
     </div>
 
     <canvas id="gauge"></canvas>
 
+<div id="plan" style="margin-top:16px; padding:14px; border:1px solid #eee; border-radius:12px;"></div>
+    
     <div class="legend">
       <div class="lg"><span class="dot" style="background:#2ecc71"></span>High: 80–100</div>
       <div class="lg"><span class="dot" style="background:#f1c40f"></span>Moderate: 60–79</div>
@@ -41,7 +42,6 @@
   </div>
 
 <script>
-  // CSV dari tab Latest_By_Email (kolom: Email, Timestamp, Total, Label)
   const API_URL = "https://script.google.com/macros/s/AKfycbzFGo8yjKkfXQ5nYEqGDwo_CLN0LwLelOJSZFTMH0nZLLREQ9IomXRhsj2daLr0hbLTfw/exec";
 
   const LABEL_COLORS = {
@@ -55,53 +55,21 @@
   let currentLabel = null;
 
   function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
-
   function scoreToLabel(score){
     if (score >= 80) return "High";
     if (score >= 60) return "Moderate";
     if (score >= 40) return "Low";
     return "Critical";
   }
-
-  // Top semicircle mapping: 0 on RIGHT (2π), 100 on LEFT (π)
   function scoreToAngle(score){
     const s = clamp(score,0,100);
-    return (2 - (s/100)) * Math.PI; // 0=>2π (right), 100=>π (left)
+    return (2 - (s/100)) * Math.PI;
   }
-
   function getParam(name){
     const u = new URL(window.location.href);
     const v = u.searchParams.get(name);
     return v ? v.trim() : "";
   }
-
-  // CSV parser aman untuk comma di quotes
-  function parseCSV(text){
-    const rows = [];
-    let row = [], cur = "", inQ = false;
-    for (let i=0; i<text.length; i++){
-      const c = text[i], n = text[i+1];
-      if (c === '"'){
-        if (inQ && n === '"'){ cur += '"'; i++; }
-        else inQ = !inQ;
-      } else if (c === ',' && !inQ){
-        row.push(cur); cur = "";
-      } else if ((c === '\n' || c === '\r') && !inQ){
-        if (c === '\r' && n === '\n') i++;
-        row.push(cur);
-        rows.push(row.map(x => x.replace(/^"|"$/g,"").trim()));
-        row = []; cur = "";
-      } else {
-        cur += c;
-      }
-    }
-    if (cur.length || row.length){
-      row.push(cur);
-      rows.push(row.map(x => x.replace(/^"|"$/g,"").trim()));
-    }
-    return rows.filter(r => r.some(x => x !== ""));
-  }
-
   function roundedRect(ctx, x, y, w, h, r){
     ctx.beginPath();
     ctx.moveTo(x+r, y);
@@ -111,11 +79,9 @@
     ctx.arcTo(x, y, x+w, y, r);
     ctx.closePath();
   }
-
   function labelColor(label){
     return LABEL_COLORS[label] || "#e74c3c";
   }
-
   function resizeCanvas(canvas){
     const dpr = window.devicePixelRatio || 1;
     const cssW = canvas.clientWidth;
@@ -125,7 +91,6 @@
     const ctx = canvas.getContext("2d");
     ctx.setTransform(dpr,0,0,dpr,0,0);
   }
-
   function polar(cx, cy, r, ang){
     return { x: cx + Math.cos(ang) * r, y: cy + Math.sin(ang) * r };
   }
@@ -146,7 +111,7 @@
     const rMid = rOuter - thickness/2;
     const rInner = rOuter - thickness - 10;
 
-    // background arc: TOP semicircle (left π -> right 0)
+    // background arc
     ctx.lineCap = "butt";
     ctx.lineWidth = thickness;
     ctx.strokeStyle = "#e9ecef";
@@ -167,12 +132,11 @@
       const a2 = scoreToAngle(seg.to);
       ctx.strokeStyle = seg.color;
       ctx.beginPath();
-      // pakai anticlockwise=true supaya jalan di TOP dari right->left (2π turun ke π)
       ctx.arc(cx, cy, rMid, a1, a2, true);
       ctx.stroke();
     });
 
-    // inner white face
+    // inner face
     ctx.fillStyle = "#fff";
     ctx.beginPath();
     ctx.arc(cx, cy, rInner, Math.PI, 0, false);
@@ -218,7 +182,7 @@
     ctx.font = "800 64px Arial";
     ctx.fillText(`${Math.round(score)}%`, cx, H*0.52);
 
-    // label pill inside canvas
+    // label pill
     const lbl = label || scoreToLabel(score);
     const pillW = 240, pillH = 44;
     const pillX = cx - pillW/2;
@@ -232,113 +196,88 @@
     ctx.fillText(`${lbl} Readiness`, cx, pillY + 30);
   }
 
-  async function fetchText(url){
-    const res = await fetch(url, { cache: "no-store" });
-    return await res.text();
+  function renderActionPlan(label){
+    const plans = {
+      High: [
+        "Maintain routines: weekly check-in + monthly review.",
+        "Share best practices with your team (peer mentoring).",
+        "Set 1 stretch-goal for next quarter."
+      ],
+      Moderate: [
+        "Pick 2 capability gaps to improve in 30 days.",
+        "Do 1 training session + 1 practice task per week.",
+        "Ask manager for feedback on 1 real work scenario."
+      ],
+      Low: [
+        "Focus on fundamentals: define role expectations + SOP.",
+        "Schedule coaching/mentoring weekly for 4 weeks.",
+        "Create a simple 2-week improvement plan with milestones."
+      ],
+      Critical: [
+        "Immediate support: clarify responsibilities + urgent training.",
+        "Assign buddy/mentor and daily check-ins for 1 week.",
+        "Stabilize workload + remove blockers before scaling tasks."
+      ]
+    };
+
+    const el = document.getElementById("plan");
+    if (!el) return;
+
+    const list = (plans[label] || plans.Low).map(x => `<li>${x}</li>`).join("");
+    el.innerHTML = `
+      <div style="font-weight:800; margin-bottom:8px;">Recommended Action Plan</div>
+      <ul style="margin:0; padding-left:18px;">${list}</ul>
+    `;
   }
 
-  function setPills(score, label, email){
-    document.getElementById("scorePill").textContent = `Score: ${score.toFixed(1)}`;
+  function init(){
+    const token = getParam("t");
+    if (!token){
+      document.getElementById("subText").textContent = "Missing parameter: ?t=";
+      document.getElementById("labelPill").textContent = "No token provided";
+      return;
+    }
 
-    const lp = document.getElementById("labelPill");
-    lp.textContent = `Label: ${label}`;
-    lp.style.background = LABEL_COLORS[label] || "#f3f3f3";
-    lp.style.color = (label === "Moderate") ? "#111" : "#fff";
-    lp.style.fontWeight = "700";
+    const cbName = "cb_" + Math.random().toString(36).slice(2);
 
-    const ep = document.getElementById("emailPill");
-    ep.style.display = "inline-block";
-    ep.textContent = `Email: ${email}`;
-  }
+    window[cbName] = (resp) => {
+      try{
+        if (!resp || !resp.ok){
+          document.getElementById("subText").textContent = (resp && resp.error) ? resp.error : "No data";
+          document.getElementById("labelPill").textContent = "No data";
+          return;
+        }
 
-  async function init(){
-  const token = getParam("t");
-  if (!token){
-    document.getElementById("subText").textContent = "Missing parameter: ?t=";
-    document.getElementById("labelPill").textContent = "No token provided";
-    return;
-  }
+        const score = clamp(Number(resp.total), 0, 100);
+        const label = (resp.label || scoreToLabel(score)).trim() || scoreToLabel(score);
 
-  const cbName = "cb_" + Math.random().toString(36).slice(2);
-  window[cbName] = (resp) => {
-    try{
-      if (!resp || !resp.ok){
-        document.getElementById("subText").textContent = resp?.error || "No data";
-        document.getElementById("labelPill").textContent = "No data";
-        return;
+        currentScore = score;
+        currentLabel = label;
+
+        document.getElementById("subText").textContent =
+          resp.ts ? `Latest submission: ${resp.ts}` : "Showing latest result";
+
+        document.getElementById("scorePill").textContent = `Score: ${score.toFixed(1)}`;
+
+        const lp = document.getElementById("labelPill");
+        lp.textContent = `Label: ${label}`;
+        lp.style.background = LABEL_COLORS[label] || "#f3f3f3";
+        lp.style.color = (label === "Moderate") ? "#111" : "#fff";
+        lp.style.fontWeight = "700";
+
+        drawGauge(score, label);
+        renderActionPlan(label);
+      } finally {
+        delete window[cbName];
       }
+    };
 
-      const score = clamp(Number(resp.total), 0, 100);
-      const label = (resp.label || scoreToLabel(score)).trim();
-
-      currentScore = score;
-      currentLabel = label;
-
-      document.getElementById("subText").textContent =
-        resp.ts ? `Latest submission: ${resp.ts}` : "Showing latest result";
-
-      // pill
-      document.getElementById("scorePill").textContent = `Score: ${score.toFixed(1)}`;
-      const lp = document.getElementById("labelPill");
-      lp.textContent = `Label: ${label}`;
-      lp.style.background = LABEL_COLORS[label] || "#f3f3f3";
-      lp.style.color = (label === "Moderate") ? "#111" : "#fff";
-      lp.style.fontWeight = "700";
-
-      drawGauge(score, label);
-
-      // optional: action plan
-      renderActionPlan(label);
-    } finally {
-      delete window[cbName];
-    }
-  };
-
-  const s = document.createElement("script");
-  s.src = `${API_URL}?t=${encodeURIComponent(token)}&callback=${encodeURIComponent(cbName)}`;
-  document.head.appendChild(s);
-}
-
-    const csvText = await fetchText(CSV_URL);
-    const raw = parseCSV(csvText);
-
-    const header = raw[0].map(h => h.toLowerCase());
-    const idxEmail = header.indexOf("email");
-    const idxTotal = header.indexOf("total");
-    const idxLabel = header.indexOf("label");
-    const idxTS = header.findIndex(h => h.includes("timestamp"));
-
-    if (idxEmail < 0 || idxTotal < 0){
-      document.getElementById("subText").textContent = "CSV missing Email/Total columns";
-      return;
-    }
-
-    const rows = raw.slice(1).map(r => ({
-      email: (r[idxEmail] || "").trim().toLowerCase(),
-      total: Number(r[idxTotal]),
-      label: (idxLabel >= 0 ? (r[idxLabel] || "").trim() : ""),
-      ts: (idxTS >= 0 ? (r[idxTS] || "").trim() : "")
-    })).filter(x => x.email && !Number.isNaN(x.total));
-
-    const found = rows.find(x => x.email === emailParam);
-
-    if (!found){
-      document.getElementById("subText").textContent = "No data found for this email";
-      document.getElementById("labelPill").textContent = "No data for this email";
-      return;
-    }
-
-    const score = clamp(found.total, 0, 100);
-    const label = found.label || scoreToLabel(score);
-
-    currentScore = score;
-    currentLabel = label;
-
-    document.getElementById("subText").textContent =
-      found.ts ? `Latest submission: ${found.ts}` : "Showing latest result for your email";
-
-    setPills(score, label, emailParam);
-    drawGauge(score, label);
+    const s = document.createElement("script");
+    s.src = `${API_URL}?t=${encodeURIComponent(token)}&callback=${encodeURIComponent(cbName)}`;
+    s.onerror = () => {
+      document.getElementById("subText").textContent = "Failed to load data (API error / permissions).";
+    };
+    document.head.appendChild(s);
   }
 
   window.addEventListener("resize", () => {
@@ -347,86 +286,7 @@
 
   init();
 </script>
+
 </body>
 </html>
 
-async function init(){
-  const token = getParam("t");
-  if (!token){
-    document.getElementById("subText").textContent = "Missing parameter: ?t=";
-    document.getElementById("labelPill").textContent = "No token provided";
-    return;
-  }
-
-  const cbName = "cb_" + Math.random().toString(36).slice(2);
-  window[cbName] = (resp) => {
-    try{
-      if (!resp || !resp.ok){
-        document.getElementById("subText").textContent = resp?.error || "No data";
-        document.getElementById("labelPill").textContent = "No data";
-        return;
-      }
-
-      const score = clamp(Number(resp.total), 0, 100);
-      const label = (resp.label || scoreToLabel(score)).trim();
-
-      currentScore = score;
-      currentLabel = label;
-
-      document.getElementById("subText").textContent =
-        resp.ts ? `Latest submission: ${resp.ts}` : "Showing latest result";
-
-      // pill
-      document.getElementById("scorePill").textContent = `Score: ${score.toFixed(1)}`;
-      const lp = document.getElementById("labelPill");
-      lp.textContent = `Label: ${label}`;
-      lp.style.background = LABEL_COLORS[label] || "#f3f3f3";
-      lp.style.color = (label === "Moderate") ? "#111" : "#fff";
-      lp.style.fontWeight = "700";
-
-      drawGauge(score, label);
-
-      // optional: action plan
-      renderActionPlan(label);
-    } finally {
-      delete window[cbName];
-    }
-  };
-
-  const s = document.createElement("script");
-  s.src = `${API_URL}?t=${encodeURIComponent(token)}&callback=${encodeURIComponent(cbName)}`;
-  document.head.appendChild(s);
-}
-
-function renderActionPlan(label){
-  const plans = {
-    High: [
-      "Maintain routines: weekly check-in + monthly review.",
-      "Share best practices with your team (peer mentoring).",
-      "Set 1 stretch-goal for next quarter."
-    ],
-    Moderate: [
-      "Pick 2 capability gaps to improve in 30 days.",
-      "Do 1 training session + 1 practice task per week.",
-      "Ask manager for feedback on 1 real work scenario."
-    ],
-    Low: [
-      "Focus on fundamentals: define role expectations + SOP.",
-      "Schedule coaching/mentoring weekly for 4 weeks.",
-      "Create a simple 2-week improvement plan with milestones."
-    ],
-    Critical: [
-      "Immediate support: clarify responsibilities + urgent training.",
-      "Assign buddy/mentor and daily check-ins for 1 week.",
-      "Stabilize workload + remove blockers before scaling tasks."
-    ]
-  };
-
-  const list = (plans[label] || plans.Low)
-    .map(x => `<li>${x}</li>`).join("");
-
-  document.getElementById("plan").innerHTML = `
-    <div style="font-weight:800; margin-bottom:8px;">Recommended Action Plan</div>
-    <ul style="margin:0; padding-left:18px;">${list}</ul>
-  `;
-}
