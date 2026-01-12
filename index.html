@@ -58,10 +58,11 @@
   // IMPORTANT: We want High on LEFT and Critical on RIGHT.
   // Canvas angle: 0 rad = right, PI rad = left (top semicircle).
   // So: score 0 -> angle 0 (right), score 100 -> angle PI (left).
-  function scoreToAngle(score){
-    const s = clamp(score,0,100);
-    return (Math.PI * (s / 100));
-  }
+// Top semicircle: 0 on RIGHT (2π), 100 on LEFT (π)
+function scoreToAngle(score){
+  const s = clamp(score,0,100);
+  return (2 - (s/100)) * Math.PI; // 0=>2π (right), 100=>π (left)
+}
 
   async function fetchCSV(url){
     const res = await fetch(url, { cache: "no-store" });
@@ -97,7 +98,7 @@
     ctx.setTransform(dpr,0,0,dpr,0,0);
   }
 
-  function drawGauge(score){
+  function drawGauge(score, label){
     const canvas = document.getElementById("gauge");
     resizeCanvas(canvas);
     const ctx = canvas.getContext("2d");
@@ -120,7 +121,7 @@
     ctx.strokeStyle = "#e9ecef";
     ctx.beginPath();
     // draw top semicircle from LEFT (PI) to RIGHT (0) clockwise
-    ctx.arc(cx, cy, rMid, Math.PI, 0, false);
+    ctx.arc(cx, cy, rMid, Math.PI, 2*Math.PI, false);
     ctx.stroke();
 
     // colored segments (score ascending = right->left)
@@ -137,7 +138,7 @@
       ctx.strokeStyle = seg.color;
       ctx.beginPath();
       // from right to left along top => counterclockwise (true) since a2>a1
-      ctx.arc(cx, cy, rMid, a1, a2, true);
+     ctx.arc(cx, cy, rMid, a1, a2, true);
       ctx.stroke();
     });
 
@@ -157,30 +158,33 @@
     ctx.stroke();
 
     // needle
-    const ang = scoreToAngle(score);
-    const needleLen = rInner * 0.98;
-    const tipX = cx + Math.cos(ang) * needleLen;
-    const tipY = cy - Math.sin(ang) * needleLen; // IMPORTANT: canvas Y down; for top semicircle use -sin
+const ang = scoreToAngle(score);
+const needleLen = rInner * 0.98;
 
-    // base points for needle width
-    const baseLen = 16;
-    const perp = ang + Math.PI/2;
-    const leftX  = cx + Math.cos(perp) * 6;
-    const leftY  = cy - Math.sin(perp) * 6;
-    const rightX = cx - Math.cos(perp) * 6;
-    const rightY = cy + Math.sin(perp) * 6;
+const tipX = cx + Math.cos(ang) * needleLen;
+const tipY = cy + Math.sin(ang) * needleLen; // ✅ pakai +sin
 
-    const backX = cx - Math.cos(ang) * baseLen;
-    const backY = cy + Math.sin(ang) * baseLen;
+const baseLen = 16;
+const perp = ang + Math.PI / 2;
 
-    ctx.fillStyle = "#2c3e50";
-    ctx.beginPath();
-    ctx.moveTo(tipX, tipY);
-    ctx.lineTo(leftX, leftY);
-    ctx.lineTo(backX, backY);
-    ctx.lineTo(rightX, rightY);
-    ctx.closePath();
-    ctx.fill();
+   // lebar jarum di sekitar pivot
+const leftX  = cx + Math.cos(perp) * 6;
+const leftY  = cy + Math.sin(perp) * 6;
+const rightX = cx - Math.cos(perp) * 6;
+const rightY = cy - Math.sin(perp) * 6;
+
+// titik belakang jarum (arah berlawanan dari tip)
+const backX = cx - Math.cos(ang) * baseLen;
+const backY = cy - Math.sin(ang) * baseLen;
+
+ctx.fillStyle = "#2c3e50";
+ctx.beginPath();
+ctx.moveTo(tipX, tipY);
+ctx.lineTo(leftX, leftY);
+ctx.lineTo(backX, backY);
+ctx.lineTo(rightX, rightY);
+ctx.closePath();
+ctx.fill();
 
     // hub
     ctx.fillStyle = "#2c3e50";
@@ -195,19 +199,21 @@
     ctx.fillText(`${Math.round(score)}%`, cx, H*0.52);
 
     // label pill (Moderate/Low/etc) like your reference
-    const label = scoreToLabel(score);
+    const lbl = label || scoreToLabel(score);
     const pillW = 240, pillH = 44;
     const pillX = cx - pillW/2;
     const pillY = H*0.56;
-    ctx.fillStyle = labelColor(label);
+    ctx.fillStyle = labelColor(lbl);
     roundedRect(ctx, pillX, pillY, pillW, pillH, 22);
     ctx.fill();
 
     ctx.fillStyle = "#111";
     ctx.font = "700 20px Arial";
-    ctx.fillText(`${label} Readiness`, cx, pillY + 30);
+    ctx.fillText(`${lbl} Readiness`, cx, pillY + 30);
+   
   }
 
+  
   async function init(){
     if (!CSV_URL || CSV_URL.includes("PASTE_YOUR_CSV_URL_HERE")) {
       alert("Paste your Google Sheets published CSV link into CSV_URL in index.html");
@@ -233,16 +239,30 @@
       sel.appendChild(opt);
     });
 
-    function update(){
-      const idx = Number(sel.value || 0);
-      const item = rows[idx] || rows[0];
-      const score = clamp(item.total,0,100);
-      const label = item.label || scoreToLabel(score);
+  function update(){
+  const idx = Number(sel.value || 0);
+  const item = rows[idx] || rows[0];
+  const score = clamp(item.total,0,100);
+  const label = item.label || scoreToLabel(score);
 
-      document.getElementById("scorePill").textContent = `Score: ${score.toFixed(1)}`;
-      document.getElementById("labelPill").textContent = `Label: ${label}`;
-      drawGauge(score);
-    }
+  document.getElementById("scorePill").textContent = `Score: ${score.toFixed(1)}`;
+
+  const labelColors = {
+    High: "#2ecc71",
+    Moderate: "#f1c40f",
+    Low: "#f39c12",
+    Critical: "#e74c3c",
+  };
+
+  const lp = document.getElementById("labelPill");
+  lp.textContent = `Label: ${label}`;
+  lp.style.background = labelColors[label] || "#f3f3f3";
+  lp.style.color = (label === "Moderate") ? "#111" : "#fff";
+  lp.style.fontWeight = "700";
+
+  drawGauge(score, label);
+}
+
 
     sel.addEventListener("change", update);
     window.addEventListener("resize", update);
