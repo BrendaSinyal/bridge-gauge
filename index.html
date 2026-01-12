@@ -18,16 +18,16 @@
     #gauge { width: 100%; height: 420px; display:block; }
   </style>
 </head>
+
 <body>
   <div class="wrap card">
     <div class="title">B/RIDGE™ Workforce Readiness</div>
     <div class="sub" id="subText">Showing latest result for your email</div>
 
     <div class="row">
-      <span class="pill" id="emailPill">Email: -</span>
       <span class="pill" id="scorePill">Score: -</span>
       <span class="pill" id="labelPill">Label: -</span>
-      <span class="pill" id="tsPill" style="display:none;">Timestamp: -</span>
+      <span class="pill" id="emailPill" style="display:none;"></span>
     </div>
 
     <canvas id="gauge"></canvas>
@@ -41,15 +41,18 @@
   </div>
 
 <script>
-  // CSV dari tab Latest_By_Email
+  // CSV dari tab Latest_By_Email (kolom: Email, Timestamp, Total, Label)
   const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSTtdTF28afrK__RsR6-8PVcDWvn-si4vjUPrW6WGg69-qPWsobQYIPA18a4ZBSuzxZnVWMYkCKSMJV/pub?gid=2042210280&single=true&output=csv";
 
-  const labelColors = {
+  const LABEL_COLORS = {
     High: "#2ecc71",
     Moderate: "#f1c40f",
     Low: "#f39c12",
     Critical: "#e74c3c",
   };
+
+  let currentScore = null;
+  let currentLabel = null;
 
   function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
@@ -60,20 +63,19 @@
     return "Critical";
   }
 
+  // Top semicircle mapping: 0 on RIGHT (2π), 100 on LEFT (π)
+  function scoreToAngle(score){
+    const s = clamp(score,0,100);
+    return (2 - (s/100)) * Math.PI; // 0=>2π (right), 100=>π (left)
+  }
+
   function getParam(name){
     const u = new URL(window.location.href);
     const v = u.searchParams.get(name);
     return v ? v.trim() : "";
   }
 
-  // Score 0 -> right end, Score 100 -> left end
-  // Use angles from 2π (right) to π (left) so semicircle is on TOP.
-  function scoreToAngle(score){
-    const s = clamp(score,0,100);
-    return (2 - (s/100)) * Math.PI; // 0=>2π, 100=>π
-  }
-
-  // CSV parser aman
+  // CSV parser aman untuk comma di quotes
   function parseCSV(text){
     const rows = [];
     let row = [], cur = "", inQ = false;
@@ -110,6 +112,10 @@
     ctx.closePath();
   }
 
+  function labelColor(label){
+    return LABEL_COLORS[label] || "#e74c3c";
+  }
+
   function resizeCanvas(canvas){
     const dpr = window.devicePixelRatio || 1;
     const cssW = canvas.clientWidth;
@@ -118,6 +124,10 @@
     canvas.height = Math.round(cssH * dpr);
     const ctx = canvas.getContext("2d");
     ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+
+  function polar(cx, cy, r, ang){
+    return { x: cx + Math.cos(ang) * r, y: cy + Math.sin(ang) * r };
   }
 
   function drawGauge(score, label){
@@ -136,15 +146,15 @@
     const rMid = rOuter - thickness/2;
     const rInner = rOuter - thickness - 10;
 
-    // background arc TOP (important: anticlockwise=true)
+    // background arc: TOP semicircle (left π -> right 0)
     ctx.lineCap = "butt";
     ctx.lineWidth = thickness;
     ctx.strokeStyle = "#e9ecef";
     ctx.beginPath();
-    ctx.arc(cx, cy, rMid, 2*Math.PI, Math.PI, true);
+    ctx.arc(cx, cy, rMid, Math.PI, 0, false);
     ctx.stroke();
 
-    // 4 segments
+    // segments
     const segments = [
       { from: 0,  to: 39,  color: "#e74c3c" },
       { from: 40, to: 59,  color: "#f39c12" },
@@ -157,49 +167,43 @@
       const a2 = scoreToAngle(seg.to);
       ctx.strokeStyle = seg.color;
       ctx.beginPath();
-      ctx.arc(cx, cy, rMid, a1, a2, true); // TOP, anticlockwise=true
+      // pakai anticlockwise=true supaya jalan di TOP dari right->left (2π turun ke π)
+      ctx.arc(cx, cy, rMid, a1, a2, true);
       ctx.stroke();
     });
 
-    // inner white face TOP
+    // inner white face
     ctx.fillStyle = "#fff";
     ctx.beginPath();
-    ctx.arc(cx, cy, rInner, 2*Math.PI, Math.PI, true);
+    ctx.arc(cx, cy, rInner, Math.PI, 0, false);
     ctx.lineTo(cx, cy);
     ctx.closePath();
     ctx.fill();
 
-    // outline TOP
+    // outline
     ctx.strokeStyle = "#cfd4da";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(cx, cy, rOuter+1, 2*Math.PI, Math.PI, true);
+    ctx.arc(cx, cy, rOuter+1, Math.PI, 0, false);
     ctx.stroke();
 
     // needle
     const ang = scoreToAngle(score);
     const needleLen = rInner * 0.98;
 
-    const tipX = cx + Math.cos(ang) * needleLen;
-    const tipY = cy + Math.sin(ang) * needleLen;
+    const tip = polar(cx, cy, needleLen, ang);
+    const back = polar(cx, cy, 16, ang + Math.PI);
 
-    const baseLen = 16;
     const perp = ang + Math.PI/2;
-
-    const leftX  = cx + Math.cos(perp) * 6;
-    const leftY  = cy + Math.sin(perp) * 6;
-    const rightX = cx - Math.cos(perp) * 6;
-    const rightY = cy - Math.sin(perp) * 6;
-
-    const backX = cx - Math.cos(ang) * baseLen;
-    const backY = cy - Math.sin(ang) * baseLen;
+    const left = polar(cx, cy, 6, perp);
+    const right = polar(cx, cy, 6, perp + Math.PI);
 
     ctx.fillStyle = "#2c3e50";
     ctx.beginPath();
-    ctx.moveTo(tipX, tipY);
-    ctx.lineTo(leftX, leftY);
-    ctx.lineTo(backX, backY);
-    ctx.lineTo(rightX, rightY);
+    ctx.moveTo(tip.x, tip.y);
+    ctx.lineTo(left.x, left.y);
+    ctx.lineTo(back.x, back.y);
+    ctx.lineTo(right.x, right.y);
     ctx.closePath();
     ctx.fill();
 
@@ -208,19 +212,18 @@
     ctx.arc(cx, cy, 12, 0, Math.PI*2);
     ctx.fill();
 
-    // big %
+    // center text
     ctx.textAlign = "center";
     ctx.fillStyle = "#111";
     ctx.font = "800 64px Arial";
     ctx.fillText(`${Math.round(score)}%`, cx, H*0.52);
 
-    // label pill in gauge
+    // label pill inside canvas
     const lbl = label || scoreToLabel(score);
     const pillW = 240, pillH = 44;
     const pillX = cx - pillW/2;
     const pillY = H*0.56;
-
-    ctx.fillStyle = labelColors[lbl] || "#999";
+    ctx.fillStyle = labelColor(lbl);
     roundedRect(ctx, pillX, pillY, pillW, pillH, 22);
     ctx.fill();
 
@@ -234,13 +237,25 @@
     return await res.text();
   }
 
+  function setPills(score, label, email){
+    document.getElementById("scorePill").textContent = `Score: ${score.toFixed(1)}`;
+
+    const lp = document.getElementById("labelPill");
+    lp.textContent = `Label: ${label}`;
+    lp.style.background = LABEL_COLORS[label] || "#f3f3f3";
+    lp.style.color = (label === "Moderate") ? "#111" : "#fff";
+    lp.style.fontWeight = "700";
+
+    const ep = document.getElementById("emailPill");
+    ep.style.display = "inline-block";
+    ep.textContent = `Email: ${email}`;
+  }
+
   async function init(){
     const emailParam = getParam("email").toLowerCase();
-    document.getElementById("emailPill").textContent = `Email: ${emailParam || "-"}`;
-
     if (!emailParam){
-      document.getElementById("labelPill").textContent = "Missing: ?email=";
-      document.getElementById("scorePill").textContent = "Score: -";
+      document.getElementById("subText").textContent = "Missing parameter: ?email=";
+      document.getElementById("labelPill").textContent = "No email provided";
       return;
     }
 
@@ -254,7 +269,7 @@
     const idxTS = header.findIndex(h => h.includes("timestamp"));
 
     if (idxEmail < 0 || idxTotal < 0){
-      document.getElementById("labelPill").textContent = "CSV missing Email/Total columns";
+      document.getElementById("subText").textContent = "CSV missing Email/Total columns";
       return;
     }
 
@@ -268,31 +283,27 @@
     const found = rows.find(x => x.email === emailParam);
 
     if (!found){
+      document.getElementById("subText").textContent = "No data found for this email";
       document.getElementById("labelPill").textContent = "No data for this email";
-      document.getElementById("scorePill").textContent = "Score: -";
       return;
     }
 
     const score = clamp(found.total, 0, 100);
     const label = found.label || scoreToLabel(score);
 
-    document.getElementById("scorePill").textContent = `Score: ${score.toFixed(1)}`;
+    currentScore = score;
+    currentLabel = label;
 
-    const lp = document.getElementById("labelPill");
-    lp.textContent = `Label: ${label}`;
-    lp.style.background = labelColors[label] || "#f3f3f3";
-    lp.style.color = (label === "Moderate") ? "#111" : "#fff";
-    lp.style.fontWeight = "700";
+    document.getElementById("subText").textContent =
+      found.ts ? `Latest submission: ${found.ts}` : "Showing latest result for your email";
 
-    // Optional tampilkan timestamp terakhir
-    if (found.ts){
-      const tp = document.getElementById("tsPill");
-      tp.style.display = "inline-block";
-      tp.textContent = `Timestamp: ${found.ts}`;
-    }
-
+    setPills(score, label, emailParam);
     drawGauge(score, label);
   }
+
+  window.addEventListener("resize", () => {
+    if (currentScore !== null) drawGauge(currentScore, currentLabel);
+  });
 
   init();
 </script>
