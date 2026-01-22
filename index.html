@@ -176,24 +176,42 @@
     ctx.arc(cx, cy, 12, 0, Math.PI*2);
     ctx.fill();
 
-    // center text
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#111";
-    ctx.font = "800 64px Arial";
-    ctx.fillText(`${Math.round(score)}%`, cx, H*0.52);
+    // center text: percent (lebih kecil + responsif)
+ctx.textAlign = "center";
+ctx.fillStyle = "#0a2a5a";
+const pctFont = Math.max(44, Math.min(60, W * 0.10));   // <-- sebelumnya 72
+ctx.font = `800 ${pctFont}px Arial`;
+ctx.fillText(`${Math.round(score)}%`, cx, H * 0.50);
 
-    // label pill
-    const lbl = label || scoreToLabel(score);
-    const pillW = 240, pillH = 44;
-    const pillX = cx - pillW/2;
-    const pillY = H*0.56;
-    ctx.fillStyle = labelColor(lbl);
-    roundedRect(ctx, pillX, pillY, pillW, pillH, 22);
-    ctx.fill();
+// label pill (lebih kecil)
+const lbl = (label || scoreToLabel(score)).trim();
 
-    ctx.fillStyle = "#111";
-    ctx.font = "700 20px Arial";
-    ctx.fillText(`${lbl} Readiness`, cx, pillY + 30);
+// ukuran pill responsif + lebih kecil dari sebelumnya
+const pillW = Math.min(280, W * 0.62);  // <-- sebelumnya bisa 320 / W*0.7
+const pillH = 40;                       // <-- sebelumnya 48
+const pillX = cx - pillW / 2;
+const pillY = H * 0.58;                 // <-- turunin dikit biar ga nabrak angka
+
+const pillBg =
+  lbl === "High" ? "#e8f7ef" :
+  lbl === "Moderate" ? "#fff4d8" :
+  lbl === "Low" ? "#ffe9d6" :
+  "#ffe1e1";
+
+const pillText =
+  lbl === "High" ? "#1a7a4a" :
+  lbl === "Moderate" ? "#9a6a00" :
+  lbl === "Low" ? "#a85a00" :
+  "#a10f0f";
+
+ctx.fillStyle = pillBg;
+roundedRect(ctx, pillX, pillY, pillW, pillH, 20);
+ctx.fill();
+
+const lblFont = Math.max(16, Math.min(20, W * 0.035)); // <-- sebelumnya 22
+ctx.fillStyle = pillText;
+ctx.font = `800 ${lblFont}px Arial`;
+ctx.fillText(`${lbl} Readiness`, cx, pillY + (pillH * 0.68));
   }
 
   function renderActionPlan(label){
